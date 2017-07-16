@@ -1,344 +1,353 @@
-#include <sys/time.h>
-#include <netinet/in.h>
-#include <net/ethernet.h>
-#include <pcap/pcap.h>
-#include <signal.h>
+/*	DEV ENVIRONMENT
+	OS		: LINUX MINT
+	TEXT EDITOR	: VIM
+	GCC VER		: 5.4.0
+*/
+
+#include <pcap.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
 #include <errno.h>
-#include <unistd.h>
-#include <netinet/ip.h>
-#include <netinet/tcp.h>
-#include <netinet/udp.h>
-#include <netinet/ip_icmp.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
-#define  PROMISCUOUS 1
+/* default snap length (maximum bytes per packet to capture) */
+#define SNAP_LEN 1518
 
-struct   iphdr    *iph;
-struct   tcphdr   *tcph;
-struct   udphdr   *udph;
-struct   icmp     *icmph;
-static   pcap_t   *pd;
-int sockfd;
-int pflag;
-int rflag;
-int eflag;
-int cflag;
-int chcnt;
+/* ethernet headers are always exactly 14 bytes [1] */
+#define SIZE_ETHERNET 14
 
-char    *device, *filter_rule;
+/* Ethernet addresses are 6 bytes */
+#define ETHER_ADDR_LEN	6
 
-void packet_analysis(unsigned char *, const struct pcap_pkthdr *, 
-                    const unsigned char *);
-
-struct printer {
-   pcap_handler f;
-   int type;
+/* Ethernet header */
+struct sniff_ethernet {
+        u_char  ether_dhost[ETHER_ADDR_LEN];    /* destination host address */
+        u_char  ether_shost[ETHER_ADDR_LEN];    /* source host address */
+        u_short ether_type;                     /* IP? ARP? RARP? etc */
 };
-   
 
-static struct printer printers[] = {
-   { packet_analysis, DLT_IEEE802 },
-   { packet_analysis, DLT_EN10MB  },
-   { NULL, 0 },
+/* IP header */
+struct sniff_ip {
+        u_char  ip_vhl;                 /* version << 4 | header length >> 2 */
+        u_char  ip_tos;                 /* type of service */
+        u_short ip_len;                 /* total length */
+        u_short ip_id;                  /* identification */
+        u_short ip_off;                 /* fragment offset field */
+        #define IP_RF 0x8000            /* reserved fragment flag */
+        #define IP_DF 0x4000            /* dont fragment flag */
+        #define IP_MF 0x2000            /* more fragments flag */
+        #define IP_OFFMASK 0x1fff       /* mask for fragmenting bits */
+        u_char  ip_ttl;                 /* time to live */
+        u_char  ip_p;                   /* protocol */
+        u_short ip_sum;                 /* checksum */
+        struct  in_addr ip_src,ip_dst;  /* source and dest address */
 };
-   
-static pcap_handler lookup_printer(int type) 
+#define IP_HL(ip)               (((ip)->ip_vhl) & 0x0f)
+#define IP_V(ip)                (((ip)->ip_vhl) >> 4)
+
+/* TCP header */
+typedef u_int tcp_seq;
+
+struct sniff_tcp {
+        u_short th_sport;               /* source port */
+        u_short th_dport;               /* destination port */
+        tcp_seq th_seq;                 /* sequence number */
+        tcp_seq th_ack;                 /* acknowledgement number */
+        u_char  th_offx2;               /* data offset, rsvd */
+#define TH_OFF(th)      (((th)->th_offx2 & 0xf0) >> 4)
+        u_char  th_flags;
+        #define TH_FIN  0x01
+        #define TH_SYN  0x02
+        #define TH_RST  0x04
+        #define TH_PUSH 0x08
+        #define TH_ACK  0x10
+        #define TH_URG  0x20
+        #define TH_ECE  0x40
+        #define TH_CWR  0x80
+        #define TH_FLAGS        (TH_FIN|TH_SYN|TH_RST|TH_ACK|TH_URG|TH_ECE|TH_CWR)
+        u_short th_win;                 /* window */
+        u_short th_sum;                 /* checksum */
+        u_short th_urp;                 /* urgent pointer */
+};
+
+void
+got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
+
+void
+print_payload(const u_char *payload, int len);
+
+void
+print_hex_ascii_line(const u_char *payload, int len, int offset);
+
+void
+print_app_usage(void)
 {
-	struct printer *p;
+	printf("\n");
+	printf("Options:\n");
+	printf("    interface    Listen on <interface> for packets.\n");
+	printf("\n");
 
-	for(p=printers; p->f; ++p)
-		if(type == p->type)
-			return p->f;
-			
-	perror("unknown data link type");
+return;
 }
 
-void packet_analysis(unsigned char *user, const struct pcap_pkthdr *h, 
-                    const unsigned char *p)
+void
+print_hex_ascii_line(const u_char *payload, int len, int offset)
 {
-	int j, temp;
-	unsigned int length = h->len;
-	struct ether_header *ep;
-	unsigned short ether_type;
-	unsigned char *tcpdata, *udpdata,*icmpdata, temp_char;
-	register unsigned int i;
+
+	int i;
+	int gap;
+	const u_char *ch;
+
+	/* offset */
+	printf("%05d   ", offset);
 	
-	chcnt = 0;
+	/* hex */
+	ch = payload;
+	for(i = 0; i < len; i++) {
+		printf("%02x ", *ch);
+		ch++;
+		/* print extra space after 8th byte for visual aid */
+		if (i == 7)
+			printf(" ");
+	}
+	/* print space to handle line less than 8 bytes */
+	if (len < 8)
+		printf(" ");
 	
-	if(rflag) {
-		while(length--) {
-			printf("%02x ", *(p++));
-			if( (++chcnt % 16) == 0 ) printf("\n");
+	/* fill hex gap with spaces if not full line */
+	if (len < 16) {
+		gap = 16 - len;
+		for (i = 0; i < gap; i++) {
+			printf("   ");
 		}
-		fprintf(stdout, "\n");
+	}
+	printf("   ");
+	
+	/* ascii (if printable) */
+	ch = payload;
+	for(i = 0; i < len; i++) {
+		if (isprint(*ch))
+			printf("%c", *ch);
+		else
+			printf(".");
+		ch++;
+	}
+
+	printf("\n");
+
+return;
+}
+
+/*
+ * print packet payload data (avoid printing binary data)
+ */
+void
+print_payload(const u_char *payload, int len)
+{
+
+	int len_rem = len;
+	int line_width = 16;			/* number of bytes per line */
+	int line_len;
+	int offset = 0;					/* zero-based offset counter */
+	const u_char *ch = payload;
+
+	if (len <= 0)
+		return;
+
+	/* data fits on one line */
+	if (len <= line_width) {
+		print_hex_ascii_line(ch, len, offset);
 		return;
 	}
 
-	length -= sizeof(struct ether_header);
-	
-	// ethernet header mapping
-	ep = (struct ether_header *)p;
-	// ethernet header만큼 띄우기.
-	p += sizeof(struct ether_header);
-	// datalink type
-	ether_type = ntohs(ep->ether_type);
-	
-	printf("\n");
-	// Ethernet frame이 802인경우 ether_type필드가 길이필드가 된다.
-	if(ether_type <= 1500) {
-		while(length--) {
-			if(++is_llchdr <= 3) {
-				fprintf(stdout,"%02x",*p++);
-				continue;
-			}
-			if(++next_line == 16) {
-				next_line = 0;      
-				printf("\n");
-			}
-			printf("%02x",*p++);
+	/* data spans multiple lines */
+	for ( ;; ) {
+		/* compute current line length */
+		line_len = line_width % len_rem;
+		/* print line */
+		print_hex_ascii_line(ch, line_len, offset);
+		/* compute total remaining */
+		len_rem = len_rem - line_len;
+		/* shift pointer to remaining bytes to print */
+		ch = ch + line_len;
+		/* add offset */
+		offset = offset + line_width;
+		/* check if we have line width chars or less */
+		if (len_rem <= line_width) {
+			/* print last line and get out */
+			print_hex_ascii_line(ch, len_rem, offset);
+			break;
 		}
 	}
-	else 
-	{    
-		if(eflag) {
-			printf("\n\n=================== Datalink layer ===================\n");
-			for(j=0; j<ETH_ALEN; j++) {
-				printf("%X", ep->ether_shost[j]);
-						if(j != 5) printf(":");
-			}       
-			printf("  ------> ");
-			for(j=0; j<ETH_ALEN; j++){ 
-				printf("%X", ep->ether_dhost[j]); 
-				if(j != 5) printf(":");
-			}
-			printf("\nether_type -> %x\n", ntohs(ep->ether_type));
-		}
 
-		iph = (struct iphdr *) p;
-		i = 0;
-		if (ntohs(ep->ether_type) == ETHERTYPE_IP) {        // ip 패킷인가?
-			printf("\n\n===================    IP HEADER   ===================\n");
-			printf("%s -----> ",   inet_ntoa(iph->saddr));
-			printf("%s\n", inet_ntoa(iph->daddr));
-			printf("Version:         %d\n", iph->version);
-			printf("Herder Length:   %d\n", iph->ihl);
-			printf("Service:         %#x\n",iph->tos);
-			printf("Total Length:    %d\n", ntohs(iph->tot_len)); 
-			printf("Identification : %d\n", ntohs(iph->id));
-			printf("Fragment Offset: %d\n", ntohs(iph->frag_off)); 
-			printf("Time to Live:    %d\n", iph->ttl);
-			printf("Checksum:        %d\n", ntohs(iph->check));
-	
-			if(iph->protocol == IPPROTO_TCP) {
-				tcph = (struct tcphdr *) (p + iph->ihl * 4);
-				// tcp data는 
-				tcpdata = (unsigned char *) (p + (iph->ihl*4) + (tcph->doff * 4));
-				printf("\n\n===================   TCP HEADER   ===================\n");
-				printf("Source Port:              %d\n", ntohs(tcph->source));
-				printf("Destination Port:         %d\n", ntohs(tcph->dest));
-				printf("Sequence Number:          %d\n", ntohl(tcph->seq));
-				printf("Acknowledgement Number:   %d\n", ntohl(tcph->ack_seq));
-				printf("Data Offset:              %d\n", tcph->doff);
-				printf("Window:                   %d\n", ntohs(tcph->window));
-				printf("URG:%d ACK:%d PSH:%d RST:%d SYN:%d FIN:%d\n", 
-				tcph->urg, tcph->ack, tcph->psh, tcph->rst, 
-				tcph->syn, tcph->fin, ntohs(tcph->check), 
-				ntohs(tcph->urg_ptr));
-				printf("\n===================   TCP DATA(HEX)  =================\n"); 
-				chcnt = 0;
-				for(temp = (iph->ihl * 4) + (tcph->doff * 4); temp <= ntohs(iph->tot_len) - 1; temp++) {
-					printf("%02x ", *(tcpdata++));
-					if( (++chcnt % 16) == 0 ) printf("\n");
-				}
-				if (pflag) {
-				   tcpdata = (unsigned char *) (p + (iph->ihl*4) + (tcph->doff * 4));
-				   printf("\n===================   TCP DATA(CHAR)  =================\n"); 
-				   for(temp = (iph->ihl * 4) + (tcph->doff * 4); temp <= ntohs(iph->tot_len) - 1; temp++) {
-						temp_char = *tcpdata;
-						if ( (temp_char == 0x0d) && ( *(tcpdata+1) == 0x0a ) ) {
-							fprintf(stdout,"\n");
-							tcpdata += 2;
-							temp++;
-							continue;
-						}
-						temp_char = ( ( temp_char >= ' ' ) && ( temp_char < 0x7f ) )? temp_char : '.';
-						printf("%c", temp_char);
-						tcpdata++;							
-				   }
-				}
-				printf("\n>>>>> End of Data >>>>>\n");
-			}
-			else if(iph->protocol == IPPROTO_UDP) {
-				udph = (struct udphdr *) (p + iph->ihl * 4);
-				udpdata = (unsigned char *) (p + iph->ihl*4) + 8;
-				printf("\n==================== UDP HEADER =====================\n");
-				printf("Source Port :      %d\n",ntohs(udph->source));
-				printf("Destination Port : %d\n", ntohs(udph->dest));
-				printf("Length :           %d\n", ntohs(udph->len));
-				printf("Checksum :         %x\n", ntohs(udph->check));
-						printf("\n===================  UDP DATA(HEX)  ================\n");   
-				chcnt = 0;
-				for(temp = (iph->ihl*4)+8; temp<=ntohs(iph->tot_len) -1; temp++) {
-				   printf("%02x ", *(udpdata++));
-				   if( (++chcnt % 16) == 0) printf("\n"); 
-				}
-
-				udpdata = (unsigned char *) (p + iph->ihl*4) + 8;
-				if(pflag) {
-					printf("\n===================  UDP DATA(CHAR)  ================\n");     
-					for(temp = (iph->ihl*4)+8; temp<=ntohs(iph->tot_len) -1; temp++)  {
-						temp_char = *udpdata;
-						if ( (temp_char == 0x0d) && ( *(udpdata+1) == 0x0a ) ) {
-							fprintf(stdout,"\n");
-							udpdata += 2;
-							temp++;
-							continue;
-						}
-						temp_char = ( ( temp_char >= ' ' ) && ( temp_char < 0x7f ) )? temp_char : '.';
-						printf("%c", temp_char);
-						udpdata++;							
-					}
-				}
-				
-				printf("\n>>>>> End of Data >>>>>\n");
-			}         
-			else if(iph->protocol == IPPROTO_ICMP) {
-				icmph = (struct icmp *) (p + iph->ihl * 4);
-				icmpdata = (unsigned char *) (p + iph->ihl*4) + 8;
-				printf("\n\n===================   ICMP HEADER   ===================\n");
-				printf("Type :                    %d\n", icmph->icmp_type);
-				printf("Code :                    %d\n", icmph->icmp_code);
-				printf("Checksum :                %02x\n", icmph->icmp_cksum);
-				printf("ID :                      %d\n", icmph->icmp_id);
-				printf("Seq :                     %d\n", icmph->icmp_seq);
-				printf("\n===================   ICMP DATA(HEX)  =================\n"); 
-				chcnt = 0;
-				for(temp = (iph->ihl * 4) + 8; temp <= ntohs(iph->tot_len) - 1; temp++) {
-					printf("%02x ", *(icmpdata++));
-					if( (++chcnt % 16) == 0 ) printf("\n");
-				}
-				printf("\n>>>>> End of Data >>>>>\n");
-		   }
-		}   
-	}
+return;
 }
 
-void sig_int(int sig)
+/*
+ * dissect/print packet
+ */
+void
+got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 {
-    printf("Bye!!\n");
-    pcap_close(pd);
-    close(sockfd);
-    exit(0);
+
+	static int count = 1;                   /* packet counter */
+	
+	/* declare pointers to packet headers */
+	const struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
+	const struct sniff_ip *ip;              /* The IP header */
+	const struct sniff_tcp *tcp;            /* The TCP header */
+//	const struct sniff_http *http;		/* The Http Header */
+	const char *payload;                    /* Packet payload */
+
+	int size_ip;
+	int size_tcp;
+	int size_payload;
+		
+	printf("\nPacket number %d:\n", count);
+	count++;
+	
+	/* define ethernet header */
+	ethernet = (struct sniff_ethernet*)(packet);
+	
+	/* define/compute ip header offset */
+	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
+	size_ip = IP_HL(ip)*4;
+	if (size_ip < 20) {
+		printf("   * Invalid IP header length: %u bytes\n", size_ip);
+		return;
+	}
+
+	/* print source and destination IP addresses */
+	printf("       From: %s\n", inet_ntoa(ip->ip_src));
+	printf("         To: %s\n", inet_ntoa(ip->ip_dst));
+	
+	/* determine protocol */	
+	switch(ip->ip_p) {
+		case IPPROTO_TCP:
+			printf("   Protocol: TCP\n");
+			break;
+		case IPPROTO_UDP:
+			printf("   Protocol: UDP\n");
+			return;
+		case IPPROTO_ICMP:
+			printf("   Protocol: ICMP\n");
+			return;
+		case IPPROTO_IP:
+			printf("   Protocol: IP\n");
+			return;
+		default:
+			printf("   Protocol: unknown\n");
+			return;
+	}
+	
+	/* define/compute tcp header offset */
+	tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
+	size_tcp = TH_OFF(tcp)*4;
+	if (size_tcp < 20) {
+		printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
+		return;
+	}
+	
+	printf("   Src port: %d\n", ntohs(tcp->th_sport));
+	printf("   Dst port: %d\n", ntohs(tcp->th_dport));
+	
+	/* define/compute tcp payload (segment) offset */
+	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+	
+	/* compute tcp payload (segment) size */
+	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
+	
+	printf("   Payload (%d bytes):\n", size_payload);
+	print_payload(payload, size_payload);
+
+return;
 }
 
-void usage(void)
+int main(int argc, char **argv)
 {
-    fprintf(stdout," Usage : noh_pa filter_rule [-pch]\n");
-    fprintf(stdout,"         -p  :  데이타를 문자로 출력한다.\n");
-    fprintf(stdout,"         -c  :  주어진 숫자만큼의 패킷만 덤프한다\n");
-    fprintf(stdout,"         -e  :  datalink layer를 출력한다.\n");
-    fprintf(stdout,"         -r  :  잡은 패킷을 생으로 찍는다.\n");
-    fprintf(stdout,"         -h  :  사용법\n");
+
+	char *dev = NULL;			/* capture device name */
+	char errbuf[PCAP_ERRBUF_SIZE];		/* error buffer */
+	pcap_t *handle;				/* packet capture handle */
+
+	char filter_exp[] = "ip";		/* filter expression [3] */
+	struct bpf_program fp;			/* compiled filter program (expression) */
+	bpf_u_int32 mask;			/* subnet mask */
+	bpf_u_int32 net;			/* ip */
+	int num_packets = 30;			/* number of packets to capture */
+
+	/* check for capture device name on command-line */
+	if (argc == 2) {
+		dev = argv[1];
+	}
+	else if (argc > 2) {
+		fprintf(stderr, "error: unrecognized command-line options\n\n");
+		print_app_usage();
+		exit(EXIT_FAILURE);
+	}
+	else {
+		/* find a capture device if not specified on command-line */
+		dev = pcap_lookupdev(errbuf);
+		if (dev == NULL) {
+			fprintf(stderr, "Couldn't find default device: %s\n",
+			    errbuf);
+			exit(EXIT_FAILURE);
+		}
+	}
+	
+	/* get network number and mask associated with capture device */
+	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
+		fprintf(stderr, "Couldn't get netmask for device %s: %s\n",
+		    dev, errbuf);
+		net = 0;
+		mask = 0;
+	}
+
+	/* print capture info */
+	printf("Device: %s\n", dev);
+	printf("Number of packets: %d\n", num_packets);
+	printf("Filter expression: %s\n", filter_exp);
+
+	/* open capture device */
+	handle = pcap_open_live(dev, SNAP_LEN, 1, 1000, errbuf);
+	if (handle == NULL) {
+		fprintf(stderr, "Couldn't open device %s: %s\n", dev, errbuf);
+		exit(EXIT_FAILURE);
+	}
+
+	/* make sure we're capturing on an Ethernet device [2] */
+	if (pcap_datalink(handle) != DLT_EN10MB) {
+		fprintf(stderr, "%s is not an Ethernet\n", dev);
+		exit(EXIT_FAILURE);
+	}
+
+	/* compile the filter expression */
+	if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
+		fprintf(stderr, "Couldn't parse filter %s: %s\n",
+		    filter_exp, pcap_geterr(handle));
+		exit(EXIT_FAILURE);
+	}
+
+	/* apply the compiled filter */
+	if (pcap_setfilter(handle, &fp) == -1) {
+		fprintf(stderr, "Couldn't install filter %s: %s\n",
+		    filter_exp, pcap_geterr(handle));
+		exit(EXIT_FAILURE);
+	}
+
+	/* now we can set our callback function */
+	pcap_loop(handle, num_packets, got_packet, NULL);
+
+	/* cleanup */
+	pcap_freecode(&fp);
+	pcap_close(handle);
+	printf("\nCapture complete.\n");
+
+return 0;
 }
 
-int main(int argc, char *argv[])
-{
-	struct  bpf_program fcode;
-	pcap_handler printer;
-	char    ebuf[PCAP_ERRBUF_SIZE];
-	int     c, i, snaplen = 1514, size, packetcnt;
-	bpf_u_int32 myself, localnet, netmask;
-	unsigned char   *pcap_userdata;
-			
-	filter_rule = argv[1];          /* example : "src host xxx.xxx.xxx.xxx and tcp port 80" */
-	
-	signal(SIGINT,sig_int);
-	
-	opterr = 0;
-	
-	if(argc-1 < 1) {
-		usage(); 
-		exit(1);
-	}
-	
-	while( (c = getopt(argc, argv,"i:c:pher")) != -1) {
-		switch(c) {
-			case 'i'  :
-				device = optarg;
-				break;
-			case 'p' :
-				pflag = 1; 
-				break;
-			case 'c' :
-				cflag = 1; 
-				packetcnt = atoi(optarg);
-				if(packetcnt <= 0) {
-					fprintf(stderr,"invalid number %s",optarg);
-					exit(1);
-				}
-				break;
-			case 'e' :
-				eflag = 1;
-				break;          
-			case 'r' :
-				rflag = 1;
-				break;          
-			case 'h' :
-				usage();
-				exit(1);
-		}
-	}           
-	
-	if (device == NULL ) {
-		if ( (device = pcap_lookupdev(ebuf) ) == NULL) {
-			perror(ebuf);           
-			exit(-1);
-		}
-	}
-	fprintf(stdout, "device = %s\n", device);
-	
-	pd = pcap_open_live(device, snaplen, PROMISCUOUS, 1000, ebuf);
-	if(pd == NULL) {
-		perror(ebuf);          
-		exit(-1);
-	}
-	
-	i = pcap_snapshot(pd);
-	if(snaplen < i) {
-		perror(ebuf);                            
-		exit(-1);
-	}
-	
-	if(pcap_lookupnet(device, &localnet, &netmask, ebuf) < 0) {
-		perror(ebuf);
-		exit(-1);
-	}
-	
-	setuid(getuid());
-	
-	if(pcap_compile(pd, &fcode, filter_rule, 0, netmask) < 0) {
-		perror(ebuf);
-		exit(-1);
-	}
-	
-	if(pcap_setfilter(pd, &fcode) < 0) {
-		perror(ebuf);
-		exit(-1);
-	}
-	
-	fflush(stderr);
-	
-	printer = lookup_printer(pcap_datalink(pd));
-	pcap_userdata = 0;
-	
-	if(pcap_loop(pd, packetcnt, printer, pcap_userdata) < 0) {
-		perror("pcap_loop error");
-		exit(-1);
-	}
-	
-	pcap_close(pd);
-	exit(0);
-}
-	
