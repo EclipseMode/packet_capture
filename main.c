@@ -201,15 +201,13 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	const struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
 	const struct sniff_ip *ip;              /* The IP header */
 	const struct sniff_tcp *tcp;            /* The TCP header */
-//	const struct sniff_http *http;		/* The Http Header */
 	const char *payload;                    /* Packet payload */
 
 	int size_ip;
 	int size_tcp;
 	int size_payload;
-		
+	
 	printf("\nPacket number %d:\n", count);
-	count++;
 	
 	/* define ethernet header */
 	ethernet = (struct sniff_ethernet*)(packet);
@@ -230,6 +228,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	switch(ip->ip_p) {
 		case IPPROTO_TCP:
 			printf("   Protocol: TCP\n");
+			count++;
 			break;
 		case IPPROTO_UDP:
 			printf("   Protocol: UDP\n");
@@ -264,7 +263,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	
 	printf("   Payload (%d bytes):\n", size_payload);
 	print_payload(payload, size_payload);
-
+	
 return;
 }
 
@@ -279,7 +278,7 @@ int main(int argc, char **argv)
 	struct bpf_program fp;			/* compiled filter program (expression) */
 	bpf_u_int32 mask;			/* subnet mask */
 	bpf_u_int32 net;			/* ip */
-	int num_packets = 30;			/* number of packets to capture */
+	int num_packets = 300;			/* number of packets to capture */
 
 	/* check for capture device name on command-line */
 	if (argc == 2) {
