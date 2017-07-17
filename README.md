@@ -10,3 +10,6 @@
   
   ### bpf_insn struct reference
   http://www.rajivchakravorty.com/source-code/.tmp/snort-html/structbpf__insn.html
+
+  ### How to print MAC ADDRESS || IP ADDRESS?
+  http://gatolu.tistory.com/entry/PCAP-MAC-IP-%EC%A3%BC%EC%86%8C
