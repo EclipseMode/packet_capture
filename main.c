@@ -231,11 +231,12 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	
 	/* define ethernet header */
 	ethernet = (struct sniff_ethernet*)(packet);
-		
+			
 	L1_EtherNet(packet);
 		
 	/* define/compute ip header offset */
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
+	count++;
 	size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
 		printf("   * Invalid IP header length: %u bytes\n", size_ip);
