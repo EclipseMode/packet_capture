@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <net/ethernet.h>
 #include <arpa/inet.h>
 
 /* default snap length (maximum bytes per packet to capture) */
@@ -22,13 +23,32 @@
 #define SIZE_ETHERNET 14
 
 /* Ethernet addresses are 6 bytes */
-#define ETHER_ADDR_LEN	6
+// #define ETHER_ADDR_LEN	6
 
 /* Ethernet header */
+/* Print Mac Address*/
+void L1_EtherNet(const void *vpData){
+	const struct ether_header *stp_eth = vpData;
+	printf("    Src Mac: %02X:%02X:%02X:%02X:%02X:%02X\n "
+		"  Dest Mac: %02X:%02X:%02X:%02X:%02X:%02X\n"
+		,stp_eth -> ether_shost[0]
+		,stp_eth -> ether_shost[1]
+		,stp_eth -> ether_shost[2]
+		,stp_eth -> ether_shost[3]
+		,stp_eth -> ether_shost[4]
+		,stp_eth -> ether_shost[5]
+		,stp_eth -> ether_dhost[0]
+		,stp_eth -> ether_dhost[1]
+		,stp_eth -> ether_dhost[2]
+		,stp_eth -> ether_dhost[3]
+		,stp_eth -> ether_shost[4]
+		,stp_eth -> ether_shost[5]);
+}
+
 struct sniff_ethernet {
         u_char  ether_dhost[ETHER_ADDR_LEN];    /* destination host address */
         u_char  ether_shost[ETHER_ADDR_LEN];    /* source host address */
-        u_short ether_type;                     /* IP? ARP? RARP? etc */
+        u_short ether_type;                     /* IP / ARP / RARP / etc */
 };
 
 /* IP header */
@@ -211,7 +231,9 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	
 	/* define ethernet header */
 	ethernet = (struct sniff_ethernet*)(packet);
-	
+		
+	L1_EtherNet(packet);
+		
 	/* define/compute ip header offset */
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
 	size_ip = IP_HL(ip)*4;
@@ -228,7 +250,6 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	switch(ip->ip_p) {
 		case IPPROTO_TCP:
 			printf("   Protocol: TCP\n");
-			count++;
 			break;
 		case IPPROTO_UDP:
 			printf("   Protocol: UDP\n");
@@ -269,7 +290,7 @@ return;
 
 int main(int argc, char **argv)
 {
-
+	
 	char *dev = NULL;			/* capture device name */
 	char errbuf[PCAP_ERRBUF_SIZE];		/* error buffer */
 	pcap_t *handle;				/* packet capture handle */
@@ -349,4 +370,3 @@ int main(int argc, char **argv)
 
 return 0;
 }
-
