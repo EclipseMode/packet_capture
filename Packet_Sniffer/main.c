@@ -1,12 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <string.h>
-#include <unistd.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <net/ethernet.h>
-#include <sys/socket.h>
 #include <pcap.h>
 #include <arpa/inet.h>
 
