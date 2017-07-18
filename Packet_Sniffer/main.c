@@ -27,51 +27,48 @@ int main(void){
     char *devname = pcap_lookupdev(errbuf); // get device name
     printf("Device : %s\n", devname); 
     handle = pcap_open_live(devname,65536,1,0,errbuf); // make packet capture descriptor
-    pcap_loop(handle, -1, Check_Packet, NULL);
+    pcap_loop(handle, -1, Check_Packet, NULL); // packet capture start
     return 0;
 }
 
 void Check_Packet(u_char *args, const struct pcap_pkthdr *header, const u_char *buf){
-	int size = header->len;
-	struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr));
-    if(iph->protocol == 6) Tcp_Packet_Printer(buf,size);
-    else printf("Not a TCP Packet\n\n\n\n\n\n");
+	int size = header->len; // set size : length of header
+	struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset 
+    if(iph->protocol == 6) Tcp_Packet_Printer(buf,size); // only print tcp.
+    else printf("Not a TCP Packet\n\n\n\n\n\n"); // only print tcp.
 }
 
 void Eth_Packet_Printer(const u_char* buf, int size){
-    struct ethhdr *eth = (struct ethhdr* )buf;
-    printf("        SOURCE MAC : %.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3], eth->h_dest[4], eth->h_dest[5]);
+    struct ethhdr *eth = (struct ethhdr* )buf; // ethernet header offset
+    printf("        SOURCE MAC : %.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3], eth->h_dest[4], eth->h_dest[5]); 
     printf("        DEST   MAC : %.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", eth->h_source[0], eth->h_source[1], eth->h_source[2], eth->h_source[3], eth->h_source[4], eth->h_source[5]);
 }
 
 void Ip_Packet_Printer(const u_char* buf, int size){
-    Eth_Packet_Printer(buf,size);
-	unsigned short IP_HEADER_LENGTH;
-	struct iphdr* iph = (struct iphdr* )(buf + sizeof(struct ethhdr));
-	IP_HEADER_LENGTH = iph->ihl * 4;
+    Eth_Packet_Printer(buf,size); // print ethernet packet first
+	struct iphdr* iph = (struct iphdr* )(buf + sizeof(struct ethhdr)); // ip header offset
 
-    memset(&source, 0, sizeof(source));
+    memset(&source, 0, sizeof(source)); // memory allocate for source sockaddr_in struct
     source.sin_addr.s_addr = iph -> saddr;
-    memset(&destination, 0, sizeof(destination));
-    destination.sin_addr.s_addr = iph->daddr;
+    memset(&destination, 0, sizeof(destination)); // memory allocate for dest sockaddr_in struct
+    destination.sin_addr.s_addr = iph->daddr; 
     
-    printf("        SOURCE IP  : %s\n", inet_ntoa(source.sin_addr));
-    printf("        DEST   IP  : %s\n", inet_ntoa(destination.sin_addr));   
+    printf("        SOURCE IP  : %s\n", inet_ntoa(source.sin_addr)); // inet_ntoa : convert int addr to str addr
+    printf("        DEST   IP  : %s\n", inet_ntoa(destination.sin_addr)); // print source / dest ip addr.  
 }
 
 
 void Tcp_Packet_Printer(const u_char* buf, int size){
-    unsigned short IP_HEADER_LENGTH;
     struct iphdr* iph = (struct iphdr* )(buf + sizeof(struct ethhdr));
-    IP_HEADER_LENGTH = iph -> ihl * 4;
-    struct tcphdr* tcph = (struct tcphdr* )(buf + IP_HEADER_LENGTH + sizeof(struct ethhdr));
-    int header_size = sizeof(struct ethhdr) + IP_HEADER_LENGTH + tcph->doff * 4;
+    unsigned short IP_HEADER_LENGTH = iph -> ihl * 4; // define header length to set offset.
+    struct tcphdr* tcph = (struct tcphdr* )(buf + IP_HEADER_LENGTH + sizeof(struct ethhdr)); // tcp header offset
+    int header_size = sizeof(struct ethhdr) + IP_HEADER_LENGTH + tcph->doff * 4; // calculate header size (ethernet + ip + tcp)to print payload
 
     Ip_Packet_Printer(buf,size);
-    printf("        SOURCE PT : %u\n", ntohs(tcph -> source));
-    printf("        DEST   PT : %u\n", ntohs(tcph -> dest));
+    printf("        SOURCE PT : %u\n", ntohs(tcph -> source));//ntohs : network byte order to host byte order
+    printf("        DEST   PT : %u\n", ntohs(tcph -> dest)); // print src and dest port number.
 
-    Payload_Printer(buf + header_size, size - header_size);
+    Payload_Printer(buf + header_size, size - header_size); // print payload
 }     
 
 void Payload_Printer(const u_char* data, int size){
