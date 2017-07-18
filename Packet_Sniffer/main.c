@@ -32,8 +32,8 @@ int main(void){
 }
 
 void Check_Packet(u_char *args, const struct pcap_pkthdr *header, const u_char *buf){
-	int size = header->len; // set size : length of header
-	struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset 
+    int size = header->len; // set size : length of header
+    struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset 
     if(iph->protocol == 6) Tcp_Packet_Printer(buf,size); // only print tcp.
     else printf("Not a TCP Packet\n\n\n\n\n\n"); // only print tcp.
 }
@@ -46,7 +46,7 @@ void Eth_Packet_Printer(const u_char* buf, int size){
 
 void Ip_Packet_Printer(const u_char* buf, int size){
     Eth_Packet_Printer(buf,size); // print ethernet packet first
-	struct iphdr* iph = (struct iphdr* )(buf + sizeof(struct ethhdr)); // ip header offset
+    struct iphdr* iph = (struct iphdr* )(buf + sizeof(struct ethhdr)); // ip header offset
 
     memset(&source, 0, sizeof(source)); // memory allocate for source sockaddr_in struct
     source.sin_addr.s_addr = iph -> saddr;
