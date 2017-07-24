@@ -37,8 +37,9 @@ int main(int argc, char** argv){
 
 void Check_Packet( const struct pcap_pkthdr *header, const u_char *buf){
     int size = header->len; // set size : length of header
+    struct ether_header *ethr = (struct ether_header*)(buf);
     struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset 
-    if(iph->protocol == IPPROTO_TCP) Tcp_Packet_Printer(buf,size); // only print tcp.
+    if(iph->protocol == IPPROTO_TCP && ethr->ether_type == 8) Tcp_Packet_Printer(buf,size); // only print ip/tcp.
 }
 
 void Eth_Packet_Printer(const u_char* buf, int size){
@@ -61,6 +62,7 @@ void Ip_Packet_Printer(const u_char* buf, int size){
     inet_ntop(AF_INET, (void*)&destination.sin_addr, dstaddr, 20);    	
     printf("        SOURCE IP  : %s\n", srcaddr); // inet_ntop : convert int addr to str addr
     printf("        DEST   IP  : %s\n", dstaddr); // print source / dest ip addr.  
+
 }
 
 void Tcp_Packet_Printer(const u_char* buf, int size){
