@@ -24,8 +24,8 @@ int main(int argc, char** argv){
     char *devname = argv[1]; // get device name
     printf("Device : %s\n", devname); 
     handle = pcap_open_live(devname,65536,1,0,errbuf); // make packet capture descriptor
-    while(packet_valid = pcap_next_ex(handle, &header,&pkt_data)){
-	if(packet_valid == -1) {printf("%s\n", pcap_geterrr(handle));break;}
+    while(packet_valid = pcap_next_ex(handle, &header,&pkt_data) && pkt_data != NULL){
+	if(packet_valid == -1) {printf("Error occured\n");break;}
 	Check_Packet(header,pkt_data); //Read data from savefile or web
 	if(packet_valid == -2) {printf("There are no more packets to read from the savefile\n");break;}
     }
