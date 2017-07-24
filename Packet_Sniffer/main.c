@@ -7,7 +7,7 @@
 #include <pcap.h>
 #include <arpa/inet.h>
 
-void Check_Packet(struct pcap_pkthdr*,const u_char*);
+void Check_Packet(const struct pcap_pkthdr*,const u_char*);
 void Ip_Packet_Printer(const u_char*, int);
 void Tcp_Packet_Printer(const u_char*, int);
 void Eth_Packet_Printer(const u_char*, int);
@@ -34,10 +34,7 @@ int main(void){
     return 0;
 }
 
-void Check_Packet (struct pcap_pkthdr *header,const u_char *buf){
-	int size = header->len; // set size : length of header
-	struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset
-void Check_Packet(u_char *args, const struct pcap_pkthdr *header, const u_char *buf){
+void Check_Packet( const struct pcap_pkthdr *header, const u_char *buf){
     int size = header->len; // set size : length of header
     struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset 
     if(iph->protocol == 6) Tcp_Packet_Printer(buf,size); // only print tcp.
