@@ -14,9 +14,6 @@ void Tcp_Packet_Printer(const u_char*, int);
 void Eth_Packet_Printer(const u_char*, int);
 void Payload_Printer(const u_char*, int);
 
-struct sockaddr_in source, destination; // address and port of socket
-int i,j; // index var
-
 int main(int argc, char** argv){
     pcap_if_t* device; // Find a device.
     pcap_t *handle; // handler
@@ -28,10 +25,8 @@ int main(int argc, char** argv){
     printf("Device : %s\n", devname); 
     handle = pcap_open_live(devname,65536,1,0,errbuf); // make packet capture descriptor
     while(packet_valid = pcap_next_ex(handle, &header,&pkt_data)){
-	if(packet_valid == 1) Check_Packet(header, pkt_data);
-	if(packet_valid == 0) {printf("Timeout Error\n"); return 0;} // timeout
-	if(packet_valid == -1) continue; // packet read error
-	if(packet_valid == -2) {printf("There are no more packets to read from the savefile\n");return 0;}
+	if(packet_valid == -1 || packet_valid == 1) Check_Packet(header,pkt_data); //Read data from savefile or web
+	if(packet_valid == -2) {printf("There are no more packets to read from the savefile\n");break;}
     }
     return 0;
 }
@@ -52,6 +47,7 @@ void Eth_Packet_Printer(const u_char* buf, int size){
 void Ip_Packet_Printer(const u_char* buf, int size){
     Eth_Packet_Printer(buf,size); // print ethernet packet first
     struct iphdr* iph = (struct iphdr* )(buf + sizeof(struct ethhdr)); // ip header offset
+    struct sockaddr_in source, destination; // address and port of socket
 
     memset(&source, 0, sizeof(source)); // memory allocate for source sockaddr_in struct
     source.sin_addr.s_addr = iph -> saddr;
