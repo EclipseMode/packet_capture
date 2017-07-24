@@ -1,16 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <string.h>
-#include <unistd.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <net/ethernet.h>
-#include <sys/socket.h>
 #include <pcap.h>
 #include <arpa/inet.h>
 
-void Check_Packet(u_char*, const struct pcap_pkthdr*, const u_char*);
+void Check_Packet(struct pcap_pkthdr*,const u_char*);
 void Ip_Packet_Printer(const u_char*, int);
 void Tcp_Packet_Printer(const u_char*, int);
 void Eth_Packet_Printer(const u_char*, int);
@@ -22,16 +19,22 @@ int i,j; // index var
 int main(void){
     pcap_if_t* device; // Find a device.
     pcap_t *handle; // handler
-    
+    int packet_valid;
+    struct pcap_pkthdr* header;
+    const u_char* pkt_data;
     char errbuf[PCAP_ERRBUF_SIZE];
     char *devname = pcap_lookupdev(errbuf); // get device name
     printf("Device : %s\n", devname); 
     handle = pcap_open_live(devname,65536,1,0,errbuf); // make packet capture descriptor
-    pcap_loop(handle, -1, Check_Packet, NULL); // packet capture start
+    while(packet_valid = pcap_next_ex(handle, &header,&pkt_data)){
+	if(packet_valid == 0) continue;
+	Check_Packet(header, pkt_data);
+	if(packet_valid == -1){printf("Packet Read Error");return -1;}
+    }
     return 0;
 }
 
-void Check_Packet(u_char *args, const struct pcap_pkthdr *header, const u_char *buf){
+void Check_Packet (struct pcap_pkthdr *header,const u_char *buf){
 	int size = header->len; // set size : length of header
 	struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset 
     if(iph->protocol == 6) Tcp_Packet_Printer(buf,size); // only print tcp.
@@ -53,10 +56,12 @@ void Ip_Packet_Printer(const u_char* buf, int size){
     memset(&destination, 0, sizeof(destination)); // memory allocate for dest sockaddr_in struct
     destination.sin_addr.s_addr = iph->daddr; 
     
-    printf("        SOURCE IP  : %s\n", inet_ntoa(source.sin_addr)); // inet_ntoa : convert int addr to str addr
-    printf("        DEST   IP  : %s\n", inet_ntoa(destination.sin_addr)); // print source / dest ip addr.  
+    char srcaddr[20], dstaddr[20];
+    inet_ntop(AF_INET, (void*)&source.sin_addr, srcaddr, 20);
+    inet_ntop(AF_INET, (void*)&destination.sin_addr, dstaddr, 20);    	
+    printf("        SOURCE IP  : %s\n", srcaddr); // inet_ntop : convert int addr to str addr
+    printf("        DEST   IP  : %s\n", dstaddr); // print source / dest ip addr.  
 }
-
 
 void Tcp_Packet_Printer(const u_char* buf, int size){
     struct iphdr* iph = (struct iphdr* )(buf + sizeof(struct ethhdr));
@@ -65,8 +70,8 @@ void Tcp_Packet_Printer(const u_char* buf, int size){
     int header_size = sizeof(struct ethhdr) + IP_HEADER_LENGTH + tcph->doff * 4; // calculate header size (ethernet + ip + tcp)to print payload
 
     Ip_Packet_Printer(buf,size);
-    printf("        SOURCE PT : %u\n", ntohs(tcph -> source));//ntohs : network byte order to host byte order
-    printf("        DEST   PT : %u\n", ntohs(tcph -> dest)); // print src and dest port number.
+    printf("        SOURCE PT  : %u\n", ntohs(tcph -> source));//ntohs : network byte order to host byte order
+    printf("        DEST   PT  : %u\n", ntohs(tcph -> dest)); // print src and dest port number.
 
     Payload_Printer(buf + header_size, size - header_size); // print payload
 }     
