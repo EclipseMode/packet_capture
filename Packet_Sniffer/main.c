@@ -3,6 +3,7 @@
 #include <string.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
+#include <netinet/in.h>
 #include <net/ethernet.h>
 #include <pcap.h>
 #include <arpa/inet.h>
@@ -37,7 +38,7 @@ int main(int argc, char** argv){
 void Check_Packet( const struct pcap_pkthdr *header, const u_char *buf){
     int size = header->len; // set size : length of header
     struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset 
-    if(iph->protocol == 6) Tcp_Packet_Printer(buf,size); // only print tcp.
+    if(iph->protocol == IPPROTO_TCP) Tcp_Packet_Printer(buf,size); // only print tcp.
 }
 
 void Eth_Packet_Printer(const u_char* buf, int size){
