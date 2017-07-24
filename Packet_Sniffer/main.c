@@ -16,14 +16,14 @@ void Payload_Printer(const u_char*, int);
 struct sockaddr_in source, destination; // address and port of socket
 int i,j; // index var
 
-int main(void){
+int main(int argc, char** argv){
     pcap_if_t* device; // Find a device.
     pcap_t *handle; // handler
     int packet_valid;
     struct pcap_pkthdr* header;
     const u_char* pkt_data;
     char errbuf[PCAP_ERRBUF_SIZE];
-    char *devname = pcap_lookupdev(errbuf); // get device name
+    char *devname = argv[1]; // get device name
     printf("Device : %s\n", devname); 
     handle = pcap_open_live(devname,65536,1,0,errbuf); // make packet capture descriptor
     while(packet_valid = pcap_next_ex(handle, &header,&pkt_data)){
