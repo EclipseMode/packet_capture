@@ -25,7 +25,8 @@ int main(int argc, char** argv){
     printf("Device : %s\n", devname); 
     handle = pcap_open_live(devname,65536,1,0,errbuf); // make packet capture descriptor
     while(packet_valid = pcap_next_ex(handle, &header,&pkt_data)){
-	if(packet_valid == -1 || packet_valid == 1) Check_Packet(header,pkt_data); //Read data from savefile or web
+	if(packet_valid == -1) {fprintf(stderr,"Error Capturing or Reading : %s\n", devname);break;}
+	Check_Packet(header,pkt_data); //Read data from savefile or web
 	if(packet_valid == -2) {printf("There are no more packets to read from the savefile\n");break;}
     }
     return 0;
