@@ -28,9 +28,10 @@ int main(int argc, char** argv){
     printf("Device : %s\n", devname); 
     handle = pcap_open_live(devname,65536,1,0,errbuf); // make packet capture descriptor
     while(packet_valid = pcap_next_ex(handle, &header,&pkt_data)){
-	if(packet_valid == 0) continue;
-	Check_Packet(header, pkt_data);
-	if(packet_valid == -1){printf("Packet Read Error");return -1;}
+	if(packet_valid == 1) Check_Packet(header, pkt_data);
+	if(packet_valid == 0) {printf("Timeout Error\n"); return 0;} // timeout
+	if(packet_valid == -1) continue; // packet read error
+	if(packet_valid == -2) {printf("There are no more packets to read from the savefile\n");return 0;}
     }
     return 0;
 }
