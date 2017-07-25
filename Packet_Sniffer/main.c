@@ -21,7 +21,10 @@ int main(int argc, char** argv){
     struct pcap_pkthdr* header;
     const u_char* pkt_data;
     char errbuf[PCAP_ERRBUF_SIZE];
-    char *devname = argv[1]; // get device name
+    char *devname; // get device name
+
+    if(argc < 2) {printf("No Arguments.\n");return 0;}
+    devname = argv[1];
     printf("Device : %s\n", devname); 
     handle = pcap_open_live(devname,65536,1,0,errbuf); // make packet capture descriptor
     while(packet_valid = pcap_next_ex(handle, &header,&pkt_data) && pkt_data != NULL){
