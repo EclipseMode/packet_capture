@@ -39,7 +39,7 @@ void Check_Packet( const struct pcap_pkthdr *header, const u_char *buf){
     int size = header->len; // set size : length of header
     struct ether_header *ethr = (struct ether_header*)(buf);
     struct iphdr *iph = (struct iphdr*)(buf + sizeof(struct ethhdr)); // ip header offset 
-    if(iph->protocol == IPPROTO_TCP && ethr->ether_type == 8) Tcp_Packet_Printer(buf,size); // only print ip/tcp.
+    if(iph->protocol == IPPROTO_TCP && ethr->ether_type == ETHERTYPE_IP) Tcp_Packet_Printer(buf,size); // only print ip/tcp.
 }
 
 void Eth_Packet_Printer(const u_char* buf, int size){
